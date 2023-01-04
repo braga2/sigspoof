@@ -1,0 +1,174 @@
+diff -u -r lineage-sigspoof/frameworks/base/core/api/current.txt lineage/frameworks/base/core/api/current.txt
+--- lineage-sigspoof/frameworks/base/core/api/current.txt	2023-01-03 14:49:21.169756944 +0100
++++ lineage/frameworks/base/core/api/current.txt	2023-01-02 20:32:39.290507546 +0100
+@@ -85,6 +85,7 @@
+     field public static final String DIAGNOSTIC = "android.permission.DIAGNOSTIC";
+     field public static final String DISABLE_KEYGUARD = "android.permission.DISABLE_KEYGUARD";
+     field public static final String DUMP = "android.permission.DUMP";
++    field public static final String FAKE_PACKAGE_SIGNATURE = "android.permission.FAKE_PACKAGE_SIGNATURE";
+     field public static final String EXPAND_STATUS_BAR = "android.permission.EXPAND_STATUS_BAR";
+     field public static final String FACTORY_TEST = "android.permission.FACTORY_TEST";
+     field public static final String FOREGROUND_SERVICE = "android.permission.FOREGROUND_SERVICE";
+@@ -222,6 +223,7 @@
+     field public static final String CALL_LOG = "android.permission-group.CALL_LOG";
+     field public static final String CAMERA = "android.permission-group.CAMERA";
+     field public static final String CONTACTS = "android.permission-group.CONTACTS";
++    field public static final String FAKE_PACKAGE = "android.permission-group.FAKE_PACKAGE";
+     field public static final String LOCATION = "android.permission-group.LOCATION";
+     field public static final String MICROPHONE = "android.permission-group.MICROPHONE";
+     field public static final String NEARBY_DEVICES = "android.permission-group.NEARBY_DEVICES";
+diff -u -r lineage-sigspoof/frameworks/base/core/res/AndroidManifest.xml lineage/frameworks/base/core/res/AndroidManifest.xml
+--- lineage-sigspoof/frameworks/base/core/res/AndroidManifest.xml	2023-01-03 14:50:11.512836912 +0100
++++ lineage/frameworks/base/core/res/AndroidManifest.xml	2023-01-02 20:36:12.971689286 +0100
+@@ -3542,6 +3542,21 @@
+         android:description="@string/permdesc_getPackageSize"
+         android:protectionLevel="normal" />
+ 
++     <!-- Dummy user-facing group for faking package signature -->
++     <permission-group android:name="android.permission-group.FAKE_PACKAGE"
++         android:label="@string/permgrouplab_fake_package_signature"
++         android:description="@string/permgroupdesc_fake_package_signature"
++         android:request="@string/permgrouprequest_fake_package_signature"
++         android:priority="100" />
++
++     <!-- Allows an application to change the package signature as
++          seen by applications -->
++     <permission android:name="android.permission.FAKE_PACKAGE_SIGNATURE"
++         android:permissionGroup="android.permission-group.UNDEFINED"
++         android:protectionLevel="dangerous"
++         android:label="@string/permlab_fakePackageSignature"
++             android:description="@string/permdesc_fakePackageSignature" />
++
+     <!-- @deprecated No longer useful, see
+          {@link android.content.pm.PackageManager#addPackageToPreferred}
+          for details. -->
+diff -u -r lineage-sigspoof/frameworks/base/core/res/res/values/config.xml lineage/frameworks/base/core/res/res/values/config.xml
+--- lineage-sigspoof/frameworks/base/core/res/res/values/config.xml	2023-01-03 14:49:47.777270567 +0100
++++ lineage/frameworks/base/core/res/res/values/config.xml	2023-01-02 20:38:38.436853651 +0100
+@@ -1931,6 +1931,8 @@
+     <string-array name="config_locationProviderPackageNames" translatable="false">
+         <!-- The standard AOSP fused location provider -->
+         <item>com.android.location.fused</item>
++        <!-- Google Play Services or microG (free reimplementation) location provider -->
++        <item>com.google.android.gms</item>
+     </string-array>
+ 
+     <!-- Package name(s) of Advanced Driver Assistance applications. These packages have additional
+diff -u -r lineage-sigspoof/frameworks/base/core/res/res/values/strings.xml lineage/frameworks/base/core/res/res/values/strings.xml
+--- lineage-sigspoof/frameworks/base/core/res/res/values/strings.xml	2023-01-03 14:49:55.241134183 +0100
++++ lineage/frameworks/base/core/res/res/values/strings.xml	2023-01-02 20:40:37.825967975 +0100
+@@ -975,6 +975,19 @@
+     <!--  Permissions -->
+ 
+     <!-- Title of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
++    <string name="permlab_fakePackageSignature">Spoof package signature</string>
++    <!-- Description of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
++    <string name="permdesc_fakePackageSignature">Allows the app to pretend to be a different app. Malicious applications might be able to use this to access private application data. Legitimate uses include an emulator pretending to be what it emulates. Grant this permission with caution only!</string>
++    <!-- Title of a category of application permissions, listed so the user can choose whether they want to allow the application to do this. -->
++    <string name="permgrouplab_fake_package_signature">Spoof package signature</string>
++    <!-- Description of a category of application permissions, listed so the user can choose whether they want to allow the application to do this. -->
++    <string name="permgroupdesc_fake_package_signature">allow to spoof package signature</string>
++    <!-- Message shown to the user when the apps requests permission from this group. If ever possible this should stay below 80 characters (assuming the parameters takes 20 characters). Don't abbreviate until the message reaches 120 characters though. [CHAR LIMIT=120] -->
++    <string name="permgrouprequest_fake_package_signature">Allow
++        &lt;b><xliff:g id="app_name" example="Gmail">%1$s</xliff:g>&lt;/b> to spoof package signature?</string>
++
++
++    <!-- Title of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
+     <string name="permlab_statusBar">disable or modify status bar</string>
+     <!-- Description of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
+     <string name="permdesc_statusBar">Allows the app to disable the status bar or add and remove system icons.</string>
+diff -u -r lineage-sigspoof/frameworks/base/services/core/java/com/android/server/pm/ComputerEngine.java lineage/frameworks/base/services/core/java/com/android/server/pm/ComputerEngine.java
+--- lineage-sigspoof/frameworks/base/services/core/java/com/android/server/pm/ComputerEngine.java	2023-01-03 14:51:19.827589933 +0100
++++ lineage/frameworks/base/services/core/java/com/android/server/pm/ComputerEngine.java	2023-01-03 20:42:02.706989580 +0100
+@@ -169,6 +169,8 @@
+ import java.util.Set;
+ import java.util.UUID;
+ 
++import android.os.Bundle;
++
+ /**
+  * This class contains the implementation of the Computer functions.  It
+  * is entirely self-contained - it has no implicit access to
+@@ -1632,14 +1634,24 @@
+             final int[] gids = (flags & PackageManager.GET_GIDS) == 0 ? EMPTY_INT_ARRAY
+                     : mPermissionManager.getGidsForUid(UserHandle.getUid(userId, ps.getAppId()));
+             // Compute granted permissions only if package has requested permissions
+-            final Set<String> permissions = ((flags & PackageManager.GET_PERMISSIONS) == 0
+-                    || ArrayUtils.isEmpty(p.getRequestedPermissions())) ? Collections.emptySet()
+-                    : mPermissionManager.getGrantedPermissions(ps.getPackageName(), userId);
++            //final Set<String> permissions = ((flags & PackageManager.GET_PERMISSIONS) == 0
++            //        || ArrayUtils.isEmpty(p.getRequestedPermissions())) ? Collections.emptySet()
++            //        : mPermissionManager.getGrantedPermissions(ps.getPackageName(), userId);
++
++            // signature spoof
++            boolean computePermissions = !ArrayUtils.isEmpty(p.getRequestedPermissions()) &&
++                ((flags & PackageManager.GET_PERMISSIONS) != 0 || getRequestedFakeSignature(p) != null);
++            final Set<String> permissions = computePermissions ?
++                    mPermissionManager.getGrantedPermissions(ps.getPackageName(), userId)
++                    : Collections.emptySet();
+ 
+             PackageInfo packageInfo = PackageInfoUtils.generate(p, gids, flags,
+                     state.getFirstInstallTime(), ps.getLastUpdateTime(), permissions, state, userId,
+                     ps);
+ 
++            // signature spoof
++            packageInfo = applyFakeSignature(p, packageInfo, permissions);
++
+             if (packageInfo == null) {
+                 return null;
+             }
+@@ -1679,6 +1691,34 @@
+         }
+     }
+ 
++    // signature spoof
++    @Nullable
++    private static String getRequestedFakeSignature(AndroidPackage p) {
++        Bundle metaData = p.getMetaData();
++        if (metaData != null) {
++            return metaData.getString("fake-signature");
++        }
++        return null;
++    }
++
++    private static PackageInfo applyFakeSignature(AndroidPackage p, PackageInfo pi,
++            Set<String> permissions) {
++        try {
++            if (permissions.contains("android.permission.FAKE_PACKAGE_SIGNATURE")
++                    && p.getTargetSdkVersion() > Build.VERSION_CODES.LOLLIPOP_MR1) {
++                String sig = getRequestedFakeSignature(p);
++                if (sig != null) {
++                    pi.signatures = new Signature[] { new Signature(sig) };
++                }
++            }
++        } catch (Throwable t) {
++            // We should never die because of any failures, this is system code!
++            Log.w("PackageManagerService.FAKE_PACKAGE_SIGNATURE", t);
++        }
++        return pi;
++    }
++    // -- signature spoof
++
+     public final PackageInfo getPackageInfo(String packageName,
+             @PackageManager.PackageInfoFlagsBits long flags, int userId) {
+         return getPackageInfoInternal(packageName, PackageManager.VERSION_CODE_HIGHEST,
+diff -u -r lineage-sigspoof/packages/modules/Permission/PermissionController/src/com/android/permissioncontroller/permission/utils/Utils.java lineage/packages/modules/Permission/PermissionController/src/com/android/permissioncontroller/permission/utils/Utils.java
+--- lineage-sigspoof/packages/modules/Permission/PermissionController/src/com/android/permissioncontroller/permission/utils/Utils.java	2023-01-03 14:51:32.371361135 +0100
++++ lineage/packages/modules/Permission/PermissionController/src/com/android/permissioncontroller/permission/utils/Utils.java	2023-01-03 14:38:45.905501714 +0100
+@@ -21,6 +21,7 @@
+ import static android.Manifest.permission_group.CALL_LOG;
+ import static android.Manifest.permission_group.CAMERA;
+ import static android.Manifest.permission_group.CONTACTS;
++import static android.Manifest.permission_group.FAKE_PACKAGE;
+ import static android.Manifest.permission_group.LOCATION;
+ import static android.Manifest.permission_group.MICROPHONE;
+ import static android.Manifest.permission_group.NEARBY_DEVICES;
+@@ -341,6 +342,8 @@
+             PLATFORM_PERMISSIONS.put(Manifest.permission.BODY_SENSORS_BACKGROUND, SENSORS);
+         }
+ 
++        PLATFORM_PERMISSIONS.put(Manifest.permission.FAKE_PACKAGE_SIGNATURE, FAKE_PACKAGE);
++
+         PLATFORM_PERMISSION_GROUPS = new ArrayMap<>();
+         int numPlatformPermissions = PLATFORM_PERMISSIONS.size();
+         for (int i = 0; i < numPlatformPermissions; i++) {
